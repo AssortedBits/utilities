@@ -1,0 +1,8 @@
+#!/bin/bash
+
+if [ -z ${pwCrypt} ]; then echo "envivar 'pwCrypt' empty or not set"; exit 1; fi
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+"$DIR"/cryptedit "$pwCrypt" $*
+

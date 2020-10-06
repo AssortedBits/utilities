@@ -1,0 +1,125 @@
+#!/bin/bash
+
+case $# in
+1)
+  echo "no editor specified.  defaulting to 'vi'"
+  editor=vi
+  ;;
+2)
+  eval editor="$2"
+  command -v "$editor" > /dev/null
+  [[ $? -eq 0 ]] || (echo -e "requested editor '$2' not found"; exit 1)
+  ;;
+*)
+  echo -e "wrong number of args\nusage: $(basename "$0") <encrypted file> [editor name]"
+  exit 1
+  ;;
+esac
+
+#the "eval" is necessary to expand tildes appropriately in all cases
+eval cryptFile="$1"
+
+if [ -z "$cryptFile" ]; then echo "first argument (cryptFile) was empty"; exit 1; fi;
+
+plainFile="$cryptFile".plaintext
+plainFileOld="$plainFile".old
+
+case "$(basename "$editor")" in
+vi)
+  editorSwapfile="$(dirname "$plainFile")/.$(basename "$plainFile")"
+  ;;
+notepad)
+  ;&
+notepad\.exe)
+  echo "support has been dropped for editor '$editor' until wslpath is released for WSL" > /dev/stderr
+  exit 1
+  ;;
+*)
+  echo
+  echo "warning:"
+  echo " This script doesn't know how to clean up any temp files created by '$editor'"
+  echo " If editor terminates abnormally and leaves temp files, they will likely contain plaintext contents of your file."
+  echo
+  read -p "press enter to continue"
+  ;;
+esac
+  
+
+cleanupAndExit () {
+  echo -e "\nwiping temp plaintext files..."
+  rm -f "$plainFile" "$plainFileOld" "$editorSwapfile"
+  retcode=$?
+  if [ ! $retcode ] ; then
+    echo "failed!!!"
+    exit 1
+  fi
+  echo success
+  exit
+}
+
+cleanOnSigint () {
+  trap SIGINT        # Resore signal handling for SIGINT
+  echo -e "\ncaught SIGINT"
+  cleanupAndExit
+  exit           #   then exit script.
+}
+
+mainFunc () {
+
+  if [ ! -d "$(dirname "$cryptFile")" ]; then
+    echo "error: parent directory '$(dirname "$cryptFile")' does not exist"
+    exit 1
+  fi
+  
+  if [ -e "$cryptFile" ]; then
+    cryptFileExists=true
+  else
+    echo "crypt file '$cryptFile' doesn't exist."
+    read -p "file will be created.  Press Enter to continue, or ctrl-c to abort."
+    cryptFileExists=false
+  fi
+
+  echo enter passphrase
+  read -s PASSPHRASE
+
+#From here on, we clean temp files upon exit
+  trap "cleanOnSigint" INT
+  trap "cleanupAndExit" ERR
+
+  if [ "true" = "$cryptFileExists" ]; then
+    echo $PASSPHRASE | gpg --batch -d --passphrase-fd 0 -q -o "$plainFile" --yes "$cryptFile"
+  else
+    touch "$plainFile"
+    echo $PASSPHRASE | gpg --batch -c --passphrase-fd 0 -q -o "$cryptFile" "$plainFile" 
+    echo "crypt file created"
+  fi
+
+  cp -f "$plainFile" "$plainFileOld"
+
+  $editor "$plainFile"
+
+  trap ERR
+  cmp -s "$plainFileOld" "$plainFile"
+  rc=$?
+  trap "cleanupAndExit" ERR
+
+  case $rc in
+  0)
+    echo "contents unchanged"
+    ;;
+  1)
+    echo "contents have changed. overwriting encrypted file."
+    echo $PASSPHRASE | gpg --batch -o "$cryptFile" --yes -c --passphrase-fd 0 -q "$plainFile"
+    ;;
+  *)
+    echo "cmp returned error"
+    ;;
+  esac
+
+  trap ERR
+  trap SIGINT          # Restore signal handling to previous before exit.
+
+  cleanupAndExit
+}
+
+mainFunc
