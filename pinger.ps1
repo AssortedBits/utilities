@@ -15,11 +15,10 @@ while($true) {
     foreach ($addr in $addresses) {
         $jobs += Start-Job -ScriptBlock {
             $result = Test-Connection -TargetName $using:addr -Count 1 -TimeoutSeconds $using:pingTimeout
-            $obj = New-Object -TypeName PsObject -Property @{
+            return [PSCustomObject]@{
                 Address = $using:addr
-                Latency = if ($null -eq $result) {"dropped"} else {$result.Latency}
+                Latency = if ($result) { $result.Latency } else { "dropped" }
             }
-            return $obj
         }
     }
     $results = @()
@@ -28,5 +27,8 @@ while($true) {
     }
     $results | Select-Object -Property Address,Latency
     echo ""
+    [System.GC]::Collect()
+    [System.GC]::WaitForPendingFinalizers()
+    [System.GC]::Collect()
     Receive-Job $waitJerb -Wait
 }
