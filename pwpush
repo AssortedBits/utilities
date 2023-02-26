@@ -1,0 +1,7 @@
+#!/bin/bash
+
+pushd /mnt/c/Users/keith/pws
+
+#Possibly I might store plaintext temp copies in this folder,
+# so, only copy files of known-safe type, judging by extensions.
+s3cmd put *.gpg *.kdbx s3://totallyawesomebucket || exit 1
